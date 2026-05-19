@@ -1,4 +1,4 @@
-﻿#include "OpenCVCamera.h"
+﻿#include "Public/OpenCVCamera.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "OpenCVHelper.h"
 #include "opencv2/videoio/legacy/constants_c.h"

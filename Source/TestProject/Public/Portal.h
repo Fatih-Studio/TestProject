@@ -10,7 +10,7 @@
 class ALearnCPPCharacter;
 
 UCLASS()
-class LEARNCPP_API APortal : public AActor
+class TESTPROJECT_API APortal : public AActor
 {
 	GENERATED_BODY()
 	

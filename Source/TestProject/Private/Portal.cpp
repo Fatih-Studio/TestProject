@@ -3,7 +3,7 @@
 
 
 #include "Public/Portal.h"
-#include "Public/LearnCPPCharacter.h"
+#include "Public/TestProjectCharacter.h"
 #include "Components/BoxComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 
@@ -56,7 +56,7 @@ void APortal::Tick(float DeltaTime)
 void APortal::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-	if (OtherActor && OtherActor->IsA(ALearnCPPCharacter::StaticClass()))
+	if (OtherActor && OtherActor->IsA(ATestProjectCharacter::StaticClass()))
 	{
 		UKismetSystemLibrary::PrintString(this, FString::Printf(TEXT("Character entered portal: %s"),*GetActorLabel()), true, true, FLinearColor::Green, 5.0f);
 		
@@ -104,7 +104,7 @@ void APortal::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* O
 void APortal::OnEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp,
 	int32 OtherBodyIndex)
 {
-	if (OtherActor && OtherActor->IsA(ALearnCPPCharacter::StaticClass()))
+	if (OtherActor && OtherActor->IsA(ATestProjectCharacter::StaticClass()))
 	{
 		// 1. Check if the timer is still waiting to fire
 		if (GetWorld()->GetTimerManager().IsTimerActive(TeleportTimerHandle))
