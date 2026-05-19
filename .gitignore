@@ -2,3 +2,8 @@
 .idea/
 .vs/
 .vsconfig
+
+# Build and compiled files
+Binaries/
+DerivedDataCache/
+Intermediate/
