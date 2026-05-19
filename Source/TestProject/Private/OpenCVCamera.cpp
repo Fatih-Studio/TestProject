@@ -79,12 +79,17 @@ void AOpenCVCameraActor::Tick(float DeltaTime)
 	{
 		for (int i = 0; i < MarkerIds.size(); i++)
 		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("Marker Detected: %d"),
-				MarkerIds[i]);
+			std::vector<cv::Point> Polygon;
+			for (int j = 0; j < MarkerCorners[i].size(); j++)
+			{
+				Polygon.push_back(cv::Point(MarkerCorners[i][j].x, MarkerCorners[i][j].y));
+			}
+			cv::polylines(Frame, Polygon, true, cv::Scalar(0, 255, 0), 3);;
+			
+			UE_LOG(LogTemp, Warning,TEXT("Marker Detected: %d"),MarkerIds[i]);
 		}
-		cv::aruco::drawDetectedMarkers(gray_frame,MarkerCorners,MarkerIds);
-		//cv::polylines(gray_frame, MarkerCorners[i], true, cv::Scalar(0, 255, 0), 2);
+		//cv::aruco::drawDetectedMarkers(gray_frame,MarkerCorners,MarkerIds);
+		
 	}
 	
 	cv::Mat BGRAFrame;
