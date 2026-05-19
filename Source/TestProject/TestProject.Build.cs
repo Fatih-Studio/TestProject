@@ -18,7 +18,9 @@ public class TestProject : ModuleRules
 			"StateTreeModule",
 			"GameplayStateTreeModule",
 			"UMG",
-			"Slate"
+			"Slate",
+			"OpenCV",
+			"OpenCVHelper"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
