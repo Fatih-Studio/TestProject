@@ -1,2 +1,3 @@
-2026/05/19-16:40:08.635 9ef4 Creating DB D:\SoloProject\TestProject\Saved\webcache_6613\Default\Sync Data\LevelDB since it was missing.
-2026/05/19-16:40:08.650 9ef4 Reusing MANIFEST D:\SoloProject\TestProject\Saved\webcache_6613\Default\Sync Data\LevelDB/MANIFEST-000001
+2026/05/20-17:32:21.340 6970 Reusing MANIFEST D:\SoloProject\TestProject\Saved\webcache_6613\Default\Sync Data\LevelDB/MANIFEST-000001
+2026/05/20-17:32:21.341 6970 Recovering log #3
+2026/05/20-17:32:21.342 6970 Reusing old log D:\SoloProject\TestProject\Saved\webcache_6613\Default\Sync Data\LevelDB/000003.log 

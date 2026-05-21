@@ -23,7 +23,10 @@ public class TestProject : ModuleRules
 			"OpenCVHelper"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
+			"OpenCVLibrary"
+		});
 
 		PublicIncludePaths.AddRange(new string[] {
 			"TestProject",
@@ -41,6 +44,8 @@ public class TestProject : ModuleRules
 			"TestProject/Variant_SideScrolling/Interfaces",
 			"TestProject/Variant_SideScrolling/UI"
 		});
+
+		bEnableExceptions = true;
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

@@ -33,7 +33,7 @@
 		},
 		{
 			"Name": "OpenCV",
-			"Enabled": true
+			"Enabled": false
 		}
 	]
 }

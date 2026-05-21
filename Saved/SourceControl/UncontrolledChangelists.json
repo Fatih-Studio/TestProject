@@ -1,0 +1,15 @@
+{
+	"version": 1,
+	"changelists": [
+		{
+			"guid": "00000000000000000000000000000000",
+			"description": "Default Uncontrolled Changelist",
+			"files": [
+				"D:/SoloProject/TestProject/Content/Aruco/BP_Camera.uasset",
+				"D:/SoloProject/TestProject/Content/Aruco/M_Camera.uasset",
+				"D:/SoloProject/TestProject/Content/__ExternalActors__/ThirdPerson/Lvl_ThirdPerson/9/SX/GH9AXGCLEX6JMY29EW3X0M.uasset",
+				"D:/SoloProject/TestProject/Content/__ExternalActors__/ThirdPerson/Lvl_ThirdPerson/2/AM/9YGDW7FMEY1CZD31VUYO11.uasset"
+			]
+		}
+	]
+}
