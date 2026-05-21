@@ -4,8 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "Components/StaticMeshComponent.h"
 
-THIRD_PARTY_INCLUDES_START
-#include "PreOpenCVHeaders.h"
+#include "PreOpenCVLib.h"
 #include "opencv2/highgui.hpp"
 #include "opencv2/core/utility.hpp"
 #include "opencv2/imgproc.hpp"
@@ -13,12 +12,30 @@ THIRD_PARTY_INCLUDES_START
 #include "opencv2/videoio/videoio.hpp"
 #include "opencv2/core/mat.hpp"
 #include "opencv2/objdetect/aruco_dictionary.hpp"
-#include "PostOpenCVHeaders.h"
-THIRD_PARTY_INCLUDES_END
+#include "PostOpenCVLib.h"
 
 #include "OpenCVCamera.generated.h"
 
 class UTexture2D;
+
+UENUM(BlueprintType)
+enum class EOpenCVArucoDictionary : uint8
+{
+	Dict4x4 UMETA(DisplayName = "4x4"),
+	Dict5x5 UMETA(DisplayName = "5x5"),
+	Dict6x6 UMETA(DisplayName = "6x6"),
+	Dict7x7 UMETA(DisplayName = "7x7"),
+	DictOriginal UMETA(DisplayName = "Original")
+};
+
+UENUM(BlueprintType)
+enum class EOpenCVArucoDictionarySize : uint8
+{
+	DictSize50 UMETA(DisplayName = "50"),
+	DictSize100 UMETA(DisplayName = "100"),
+	DictSize250 UMETA(DisplayName = "250"),
+	DictSize1000 UMETA(DisplayName = "1000")
+};
 
 UCLASS()
 class AOpenCVCameraActor : public AActor
@@ -33,6 +50,8 @@ protected:
 	virtual void Tick(float DeltaTime) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
+	static cv::aruco::PredefinedDictionaryType GetOpenCVDictionaryType(EOpenCVArucoDictionary Dictionary, EOpenCVArucoDictionarySize Size);
+	
 public:
 	UPROPERTY(VisibleAnywhere)
 	UStaticMeshComponent* PlaneMesh;
@@ -45,23 +64,29 @@ public:
 	
 	UMaterialInstanceDynamic* DynMaterial;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
-	float CameraUpdateRate = 1.0f / 30.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Aruco", meta = (ToolTip = "How often update for the detection (in frame per seconds)"))
+	float ArucoUpdateRate = 30.0f;
 
-	float CameraTimer = 0.0f;
+	float ArucoTimer = 0.0f;
 	
 	static UTexture2D* TextureFromCvMat(cv::Mat& Mat);
 	
 	static UTexture2D* TextureFromCvMat(cv::Mat& Mat, UTexture2D* InTexture);
 	
-private:
-	THIRD_PARTY_INCLUDES_START
-		cv::VideoCapture Camera;
-		cv::Mat Frame;
-		cv::Mat gray_frame;
-		cv::aruco::ArucoDetector ArucoDetector;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Aruco")
+	EOpenCVArucoDictionary DictionaryGrid = EOpenCVArucoDictionary::Dict6x6;
+
+	// Hidden when DictOriginal is selected — it has no size
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Aruco", meta = (EditCondition = "DictionaryGrid != EOpenCVArucoDictionary::DictOriginal"))
+	EOpenCVArucoDictionarySize DictionarySize = EOpenCVArucoDictionarySize::DictSize1000;
 	
-		std::vector<int> MarkerIds;
-		std::vector<cv::Mat> MarkerCorners, RejectedCorners;
-	THIRD_PARTY_INCLUDES_END
+private:
+	cv::VideoCapture Camera;
+	cv::Mat Frame;
+	cv::Mat gray_frame;
+	cv::aruco::ArucoDetector ArucoDetector;
+	
+	std::vector<int> MarkerIds;
+	std::vector<cv::Mat> MarkerCorners, RejectedCorners;
+
 };

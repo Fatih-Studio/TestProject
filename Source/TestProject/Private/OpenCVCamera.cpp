@@ -22,7 +22,6 @@ void AOpenCVCameraActor::BeginPlay()
 		PlaneMesh->SetMaterial(0,DynMaterial);
 	}
 	
-	THIRD_PARTY_INCLUDES_START
 	Camera.open(0);
 	if (!Camera.isOpened())
 	{
@@ -32,7 +31,7 @@ void AOpenCVCameraActor::BeginPlay()
 	Camera.set(CV_CAP_PROP_FRAME_WIDTH, 1280);
 	Camera.set(CV_CAP_PROP_FRAME_HEIGHT, 720);
 	
-	cv::aruco::Dictionary Dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_1000);
+	cv::aruco::Dictionary Dictionary = cv::aruco::getPredefinedDictionary(GetOpenCVDictionaryType(DictionaryGrid, DictionarySize));
 	cv::aruco::DetectorParameters Params;
 	
 	MarkerIds.reserve(100);
@@ -42,23 +41,20 @@ void AOpenCVCameraActor::BeginPlay()
 	ArucoDetector = cv::aruco::ArucoDetector(Dictionary, Params);
 	
 	UKismetSystemLibrary::PrintString(this, TEXT("Camera opened successfully"), true, true, FLinearColor::Green, 5.0f);
-	THIRD_PARTY_INCLUDES_END
 }	
 
 void AOpenCVCameraActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	
-	CameraTimer += DeltaTime;
+	ArucoTimer += DeltaTime;;
 
-	if (CameraTimer < CameraUpdateRate)
+	if (ArucoTimer < 1.0f/ArucoUpdateRate)
 	{
 		return;
 	}
 
-	CameraTimer = 0.0f;
-	
-THIRD_PARTY_INCLUDES_START
+	ArucoTimer = 0.0f;
 
 	MarkerIds.clear();
 	MarkerCorners.clear();
@@ -125,14 +121,12 @@ THIRD_PARTY_INCLUDES_START
 	{
 		DynMaterial->SetTextureParameterValue("CameraTexture",CameraTexture);
 	}
-THIRD_PARTY_INCLUDES_END
 }
 
 void AOpenCVCameraActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	SetActorTickEnabled(false);
 	
-	THIRD_PARTY_INCLUDES_START
 		if (Camera.isOpened())
 		{
 			try
@@ -155,9 +149,30 @@ void AOpenCVCameraActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Frame.release();
 	gray_frame.release();
 	
-	THIRD_PARTY_INCLUDES_END
 		
 	Super::EndPlay(EndPlayReason);
+}
+
+cv::aruco::PredefinedDictionaryType AOpenCVCameraActor::GetOpenCVDictionaryType(EOpenCVArucoDictionary Dictionary,
+	EOpenCVArucoDictionarySize Size)
+{
+	// Original has no size variant
+	if (Dictionary == EOpenCVArucoDictionary::DictOriginal)
+	{
+		return cv::aruco::DICT_ARUCO_ORIGINAL;
+	}
+
+	// Build lookup table [Dictionary][Size]
+	const cv::aruco::PredefinedDictionaryType LookupTable[4][4] =
+	{
+		// Size50               Size100               Size250               Size1000
+		{ cv::aruco::DICT_4X4_50,  cv::aruco::DICT_4X4_100,  cv::aruco::DICT_4X4_250,  cv::aruco::DICT_4X4_1000  }, // 4x4
+		{ cv::aruco::DICT_5X5_50,  cv::aruco::DICT_5X5_100,  cv::aruco::DICT_5X5_250,  cv::aruco::DICT_5X5_1000  }, // 5x5
+		{ cv::aruco::DICT_6X6_50,  cv::aruco::DICT_6X6_100,  cv::aruco::DICT_6X6_250,  cv::aruco::DICT_6X6_1000  }, // 6x6
+		{ cv::aruco::DICT_7X7_50,  cv::aruco::DICT_7X7_100,  cv::aruco::DICT_7X7_250,  cv::aruco::DICT_7X7_1000  }, // 7x7
+	};
+
+	return LookupTable[(uint8)Dictionary][(uint8)Size];
 }
 
 UTexture2D* AOpenCVCameraActor::TextureFromCvMat(cv::Mat& Mat)
