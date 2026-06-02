@@ -3,13 +3,20 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Components/StaticMeshComponent.h"
+#include "TextureResource.h"
+#include "RenderingThread.h"
+#include "RHICommandList.h"
+#include "RHIResources.h"
+#include "Kismet/KismetSystemLibrary.h"
 
-#include "PreOpenCVLib.h"
+#include "PreOpenCVLib.h"	
 #include "opencv2/highgui.hpp"
 #include "opencv2/core/utility.hpp"
+#include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
 #include "opencv2/objdetect/aruco_detector.hpp"
 #include "opencv2/videoio/videoio.hpp"
+#include "opencv2/videoio/legacy/constants_c.h"
 #include "opencv2/core/mat.hpp"
 #include "opencv2/objdetect/aruco_dictionary.hpp"
 #include "PostOpenCVLib.h"
@@ -80,13 +87,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Aruco", meta = (EditCondition = "DictionaryGrid != EOpenCVArucoDictionary::DictOriginal"))
 	EOpenCVArucoDictionarySize DictionarySize = EOpenCVArucoDictionarySize::DictSize1000;
 	
+	void InitCameraTexture(int32 Width, int32 Height);
+	
 private:
 	cv::VideoCapture Camera;
 	cv::Mat Frame;
-	cv::Mat gray_frame;
+	cv::Mat selected_frame;
 	cv::aruco::ArucoDetector ArucoDetector;
 	
 	std::vector<int> MarkerIds;
 	std::vector<cv::Mat> MarkerCorners, RejectedCorners;
-
+	
+	bool DetectOnAllCandidates(const cv::Mat& Image);
+	int32 BestCandidateIndex = -1; // -1 = not calibrated yet
+	cv::Ptr<cv::CLAHE> Clahe;
+	bool bCalibrated = false;
+	int32 FramesWithNoDetection = 0;
+	static const int32 RecalibrationThreshold = 60;
+	cv::Mat ExtractCandidate(const cv::Mat& Image, int32 Index);
+	void DetectMarkers(const cv::Mat& Image);
+	void UpdateTextureFromMat(const cv::Mat& Image);
 };

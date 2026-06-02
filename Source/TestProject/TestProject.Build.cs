@@ -23,7 +23,10 @@ public class TestProject : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
-			"OpenCVLibrary"
+			"OpenCVLibrary",
+			"RHI",
+			"RenderCore",
+			"Renderer"
 		});
 
 		PublicIncludePaths.AddRange(new string[] {
