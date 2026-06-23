@@ -44,6 +44,17 @@ enum class EOpenCVArucoDictionarySize : uint8
 	DictSize1000 UMETA(DisplayName = "1000")
 };
 
+// Calibration State
+UENUM(BlueprintType)
+enum class ECalibrationState : uint8
+{
+	Idle        UMETA(DisplayName = "Idle"),
+	Capturing   UMETA(DisplayName = "Capturing Frames"),
+	Calibrating UMETA(DisplayName = "Calibrating"),
+	Calibrated  UMETA(DisplayName = "Calibrated"),
+	Failed      UMETA(DisplayName = "Failed")
+};
+
 UCLASS()
 class AOpenCVCameraActor : public AActor
 {
@@ -89,6 +100,67 @@ public:
 	
 	void InitCameraTexture(int32 Width, int32 Height);
 	
+	// Calibration Variable
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Calibration")
+	float FocalLengthX = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Calibration")
+	float FocalLengthY = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Calibration")
+	float PrincipalX = 0.0f;   // cx — usually image width / 2
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Calibration")
+	float PrincipalY = 0.0f;   // cy — usually image height / 2
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Calibration")
+	float DistK1 = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Calibration")
+	float DistK2 = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Calibration")
+	float DistP1 = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Calibration")
+	float DistP2 = 0.0f;
+	
+	// Calibration Setting
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Calibration")
+	int32 ChessboardCornersX = 9;   // inner corners horizontal
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Calibration")
+	int32 ChessboardCornersY = 6;   // inner corners vertical
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Calibration")
+	float SquareSizeMM = 25.0f;     // physical square size in mm
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Calibration")
+	int32 RequiredFrames = 20;      // frames needed before calibrating
+	
+	// Calibration Status
+	UPROPERTY(BlueprintReadOnly, Category = "Calibration")
+	ECalibrationState CalibrationState = ECalibrationState::Idle;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Calibration")
+	int32 CapturedFrames = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Calibration")
+	float RMSError = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Calibration")
+	bool bCalibrationLoaded = false;
+	
+	// Calibration Control
+	UFUNCTION(BlueprintCallable, Category = "Calibration")
+	void StartCalibration();
+
+	UFUNCTION(BlueprintCallable, Category = "Calibration")
+	void ResetCalibration();
+
+	UFUNCTION(BlueprintCallable, Category = "Calibration")
+	bool LoadCalibration();	
+	
 private:
 	cv::VideoCapture Camera;
 	cv::Mat Frame;
@@ -107,4 +179,18 @@ private:
 	cv::Mat ExtractCandidate(const cv::Mat& Image, int32 Index);
 	void DetectMarkers(const cv::Mat& Image);
 	void UpdateTextureFromMat(const cv::Mat& Image);
+	
+	// Calibration
+	// Internal calibration data
+	std::vector<std::vector<cv::Point3f>> CalibObjPoints;
+	std::vector<std::vector<cv::Point2f>> CalibImgPoints;
+	cv::Size CalibImageSize;
+
+	float CaptureCooldown     = 0.0f;
+	float CaptureCooldownTime = 1.5f;  // seconds between auto-captures
+
+	bool TryCaptureCalibrationFrame(const cv::Mat& Frame);
+	bool IsFrameDiverse(const std::vector<cv::Point2f>& NewCorners);
+	bool RunCalibration();
+	void SaveCalibration();
 };

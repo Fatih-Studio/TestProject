@@ -1,5 +1,7 @@
 ﻿#include "Public/OpenCVCamera.h"
 
+#include "opencv2/calib3d.hpp"
+
 AOpenCVCameraActor::AOpenCVCameraActor()
 {	
 	PrimaryActorTick.bCanEverTick = true;
@@ -25,15 +27,28 @@ void AOpenCVCameraActor::BeginPlay()
 		return;
 	}
 	
+	if (LoadCalibration())
+	{
+		UKismetSystemLibrary::PrintString(this,
+			FString::Printf(TEXT("Calibration auto-loaded — RMS: %.4f"), RMSError),true, true, FLinearColor::Green, 5.0f);
+	}
+	else
+	{
+		UKismetSystemLibrary::PrintString(this,
+			TEXT("No calibration found — call StartCalibration()"),true, true, FLinearColor::Yellow, 5.0f);
+	}
+	
 	Camera >> Frame;
 	if (!Frame.empty())
 	{
+		FString Message = FString::Printf(TEXT("Cols = %d, Rows = %d"), Frame.cols, Frame.rows);
+		UKismetSystemLibrary::PrintString(this, Message, true, true, FLinearColor::Green, 5.0f);
 		InitCameraTexture(Frame.cols, Frame.rows);
 	}
 
 	// Fix exposure and focus to prevent hunting
 	Camera.set(cv::CAP_PROP_AUTOFOCUS, 0);  // disable autofocus
-	Camera.set(cv::CAP_PROP_AUTO_EXPOSURE, 0); // disable auto exposure
+	//Camera.set(cv::CAP_PROP_AUTO_EXPOSURE, 0); // disable auto exposure
 	Clahe = cv::createCLAHE(4.0, cv::Size(8, 8));
 	
 	cv::aruco::Dictionary Dictionary = cv::aruco::getPredefinedDictionary(GetOpenCVDictionaryType(DictionaryGrid, DictionarySize));
@@ -72,10 +87,29 @@ void AOpenCVCameraActor::Tick(float DeltaTime)
 		return;
 	}
 	
-	if (!bCalibrated)
+	if (CalibrationState == ECalibrationState::Capturing)
 	{
-		DetectOnAllCandidates(Frame);
+		CaptureCooldown += DeltaTime;
+
+		if (CaptureCooldown >= CaptureCooldownTime)
+		{
+			// Convert to grayscale for chessboard detection
+			cv::Mat Calib;
+			cv::cvtColor(Frame, Calib, cv::COLOR_BGR2GRAY);
+
+			if (TryCaptureCalibrationFrame(Calib))
+			{
+				CaptureCooldown = 0.0f; // reset cooldown after capture
+			}
+
+			Calib.release();
+		}
 	}
+	
+	if (!bCalibrated)
+		{
+		DetectOnAllCandidates(Frame);
+		}
 	else
 	{
 		DetectMarkers(Frame);
@@ -155,105 +189,6 @@ cv::aruco::PredefinedDictionaryType AOpenCVCameraActor::GetOpenCVDictionaryType(
 	return LookupTable[(uint8)Dictionary][(uint8)Size];
 }
 
-UTexture2D* AOpenCVCameraActor::TextureFromCvMat(cv::Mat& Mat)
-{
-	if ((Mat.cols <= 0) || (Mat.rows <= 0))
-	{
-		return nullptr;
-	}
-
-	// Only support CV_8U depth (8-bit unsigned)
-	if (Mat.depth() != CV_8U)
-	{
-		return nullptr;
-	}
-
-	// Determine pixel format from channel count
-	EPixelFormat PixelFormat;
-	switch (Mat.channels())
-	{
-	case 1:
-		PixelFormat = PF_G8;
-		break;
-	case 4:
-		PixelFormat = PF_B8G8R8A8;
-		break;
-	default:
-		return nullptr;
-	}
-
-	// Create the texture
-	UTexture2D* NewTexture = UTexture2D::CreateTransient(Mat.cols, Mat.rows, PixelFormat);
-	if (!NewTexture)
-	{
-		return nullptr;
-	}
-
-#if WITH_EDITORONLY_DATA
-	NewTexture->MipGenSettings = TMGS_NoMipmaps;
-#endif
-	NewTexture->NeverStream = true;
-	NewTexture->SRGB = 0;
-
-	// Lock mip 0 and copy pixel data
-	FTexture2DMipMap& Mip0 = NewTexture->GetPlatformData()->Mips[0];
-	void* TextureData = Mip0.BulkData.Lock(LOCK_READ_WRITE);
-
-	const int32 PixelStride = Mat.channels();
-	FMemory::Memcpy(TextureData, Mat.data, Mat.cols * Mat.rows * SIZE_T(PixelStride));
-
-	Mip0.BulkData.Unlock();
-	NewTexture->UpdateResource();
-
-	return NewTexture;
-}
-
-UTexture2D* AOpenCVCameraActor::TextureFromCvMat(cv::Mat& Mat, UTexture2D* InTexture)
-{
-	if (!InTexture)
-	{
-		return TextureFromCvMat(Mat);
-	}
-	
-	if ((Mat.cols <= 0 || Mat.rows <= 0) || (Mat.depth() != CV_8U))
-	{
-		return nullptr;
-	}
-	
-	EPixelFormat PixelFormat;
-	switch (Mat.channels())
-	{
-	case 1:
-		PixelFormat = PF_G8;
-		break;
-		
-	case 2:
-		PixelFormat = PF_B8G8R8A8;
-		break;
-		
-	default:
-		return nullptr;
-	}
-	if ((InTexture->GetSizeX() != Mat.cols) || (InTexture->GetSizeY() != Mat.rows) || (InTexture->GetPixelFormat() != PixelFormat))
-	{
-		return TextureFromCvMat(Mat);
-	}
-	
-	// Copy the pixels from the OpenCV Mat to the Texture
-
-	FTexture2DMipMap& Mip0 = InTexture->GetPlatformData()->Mips[0];
-	void* TextureData = Mip0.BulkData.Lock(LOCK_READ_WRITE);
-
-	const int32 PixelStride = Mat.channels();
-	FMemory::Memcpy(TextureData, Mat.data, Mat.cols * Mat.rows * SIZE_T(PixelStride));
-
-	Mip0.BulkData.Unlock();
-
-	InTexture->UpdateResource();
-
-	return InTexture;
-}
-
 void AOpenCVCameraActor::InitCameraTexture(int32 Width, int32 Height)
 {
 	// Create texture with Dynamic flag — designed for frequent CPU updates
@@ -299,12 +234,8 @@ bool AOpenCVCameraActor::DetectOnAllCandidates(const cv::Mat& Image)
 			Candidate, MarkerCorners, MarkerIds, RejectedCorners);
 		
 		/*
-		UE_LOG(LogTemp, Warning,
-			TEXT("[%s] Detected: %d | Rejected: %d"),
-			CandidateNames[i],
-			MarkerIds.size(),
-			RejectedCorners.size());
-			*/
+		UE_LOG(LogTemp, Warning, TEXT("[%s] Detected: %d | Rejected: %d"), CandidateNames[i], MarkerIds.size(), RejectedCorners.size());
+		*/
 
 		Candidate.release();
 
@@ -350,8 +281,7 @@ cv::Mat AOpenCVCameraActor::ExtractCandidate(const cv::Mat& Image, int32 Index)
     if (!bChannelLogged)	
     {
         UE_LOG(LogTemp, Warning,
-            TEXT("Camera frame channels: %d"), Image.channels());
-        bChannelLogged = true;
+            TEXT("Camera frame channels: %d"), Image.channels()); bChannelLogged = true;
     }
 
     cv::Mat Candidate;
@@ -415,14 +345,8 @@ cv::Mat AOpenCVCameraActor::ExtractCandidate(const cv::Mat& Image, int32 Index)
 
 void AOpenCVCameraActor::DetectMarkers(const cv::Mat& Image)
 {
-	// Blue channel gives best contrast for this marker set
-	//std::vector<cv::Mat> Channels;
-	//Channels.reserve(3);
-	//cv::split(Image, Channels);
 
-	selected_frame = ExtractCandidate(Image, BestCandidateIndex); // Blue channel (index 0 in BGR)
-
-	//for (auto& M : Channels) M.release();
+	selected_frame = ExtractCandidate(Image, BestCandidateIndex); 
 
 	MarkerIds.clear();
 	MarkerCorners.clear();
@@ -444,6 +368,7 @@ void AOpenCVCameraActor::DetectMarkers(const cv::Mat& Image)
 					(int)Corners[j].y));
 			}
 			cv::polylines(Frame, Polygon, true, cv::Scalar(0, 255, 0), 3);
+			//cv::drawFrameAxes(Frame, CameraMatrix, DistCoeffs, rvecs[i], tvecs[i], 0.05);
 
 			//UE_LOG(LogTemp, Warning,TEXT("Marker ID: %d"), MarkerIds[i]);
 		}
@@ -473,13 +398,225 @@ void AOpenCVCameraActor::UpdateTextureFromMat(const cv::Mat& Image)
 			FUpdateTextureRegion2D Region(0, 0, 0, 0, Width, Height);
 
 			// GetTextureRHI() returns FRHITexture* — no cast needed
-			RHIUpdateTexture2D(
-				TextureResource->GetTextureRHI(),
-				0,
-				Region,
-				Pitch,
-				PixelData.GetData()
-			);
+			RHIUpdateTexture2D(TextureResource->GetTextureRHI(),0,Region,Pitch,PixelData.GetData());
 		});
 
+}
+
+
+void AOpenCVCameraActor::StartCalibration()
+{
+	ResetCalibration();
+	CalibrationState = ECalibrationState::Capturing;
+	
+	FString Messsage = FString::Printf(TEXT("Calibration started. Please show chessboard (%d, %d)"), ChessboardCornersX, ChessboardCornersY);
+	UKismetSystemLibrary::PrintString(this, Messsage, true, true, FLinearColor::Yellow, 5.0f);
+}
+
+void AOpenCVCameraActor::ResetCalibration()
+{
+	CalibObjPoints.clear();
+	CalibImgPoints.clear();
+	CapturedFrames   = 0;
+	RMSError         = 0.0f;
+	CaptureCooldown  = 0.0f;
+	CalibrationState = ECalibrationState::Idle;
+}
+
+bool AOpenCVCameraActor::LoadCalibration()
+{
+	FString LoadPath = FPaths::ProjectSavedDir() / TEXT("CameraCalibration.json");
+	FString Json;
+
+	if (!FFileHelper::LoadFileToString(Json, *LoadPath))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("No calibration file found at: %s"), *LoadPath);
+		return false;
+	}
+
+	// Simple key extraction without full JSON parser
+	auto ExtractValue = [&](const FString& Key) -> float
+	{
+		FString Search = FString::Printf(TEXT("\"%s\""), *Key);
+		int32 Idx = Json.Find(Search);
+		if (Idx == INDEX_NONE) return 0.0f;
+
+		int32 ColonIdx = Json.Find(TEXT(":"), ESearchCase::IgnoreCase,
+			ESearchDir::FromStart, Idx);
+		if (ColonIdx == INDEX_NONE) return 0.0f;
+
+		FString Remainder = Json.Mid(ColonIdx + 1).TrimStartAndEnd();
+		return FCString::Atof(*Remainder);
+	};
+
+	RMSError     = ExtractValue(TEXT("rms"));
+	FocalLengthX = ExtractValue(TEXT("fx"));
+	FocalLengthY = ExtractValue(TEXT("fy"));
+	PrincipalX   = ExtractValue(TEXT("cx"));
+	PrincipalY   = ExtractValue(TEXT("cy"));
+	DistK1       = ExtractValue(TEXT("k1"));
+	DistK2       = ExtractValue(TEXT("k2"));
+	DistP1       = ExtractValue(TEXT("p1"));
+	DistP2       = ExtractValue(TEXT("p2"));
+
+	CalibrationState   = ECalibrationState::Calibrated;
+	bCalibrationLoaded = true;
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("Calibration loaded — RMS: %.4f fx: %.2f fy: %.2f"),
+		RMSError, FocalLengthX, FocalLengthY);
+
+	return true;
+}
+
+
+bool AOpenCVCameraActor::TryCaptureCalibrationFrame(const cv::Mat& CalibFrame)
+{
+	cv::Size BoardSize(ChessboardCornersX, ChessboardCornersY);
+	std::vector<cv::Point2f> Corners;
+	
+	bool bFound	= cv::findChessboardCorners(CalibFrame, BoardSize, Corners, cv::CALIB_CB_ADAPTIVE_THRESH | cv::CALIB_CB_NORMALIZE_IMAGE | cv::CALIB_CB_FAST_CHECK);
+	
+	if (!bFound) return false;
+	
+	// Refine to subpixel accuracy
+	cv::TermCriteria Criteria(
+		cv::TermCriteria::EPS + cv::TermCriteria::COUNT, 30, 0.001);
+	cv::cornerSubPix(CalibFrame, Corners, cv::Size(11, 11), cv::Size(-1, -1), Criteria);
+
+	// Draw detected corners on Frame for visual feedback
+	cv::Mat DisplayFrame;
+	cv::cvtColor(CalibFrame, DisplayFrame, cv::COLOR_GRAY2BGR);
+	cv::drawChessboardCorners(DisplayFrame, BoardSize, Corners, bFound);
+
+	// Overlay on main frame
+	cv::addWeighted(CalibFrame, 0.7, DisplayFrame, 0.3, 0, Frame);
+	DisplayFrame.release();
+
+	// Check if frame is diverse enough from existing captures
+	if (!IsFrameDiverse(Corners)) return false;
+
+	// Build 3D object points for this board size
+	std::vector<cv::Point3f> ObjPoints;
+	for (int y = 0; y < ChessboardCornersY; y++)
+		for (int x = 0; x < ChessboardCornersX; x++)
+			ObjPoints.push_back(cv::Point3f(x * SquareSizeMM, y * SquareSizeMM, 0.0f));
+
+	CalibObjPoints.push_back(ObjPoints);
+	CalibImgPoints.push_back(Corners);
+	CalibImageSize = CalibFrame.size();
+	CapturedFrames++;
+	
+	FString Messsage = FString::Printf(TEXT("Captured calibration frame %d/%d"), CapturedFrames, RequiredFrames);
+	UKismetSystemLibrary::PrintString(this, Messsage, true, true, FLinearColor::Green, 1.0f);
+	
+	// Auto-run calibration when enough frames collected
+	if (CapturedFrames >= RequiredFrames)
+	{
+		CalibrationState = ECalibrationState::Calibrating;
+		RunCalibration();
+	}
+
+	return true;
+}
+
+bool AOpenCVCameraActor::IsFrameDiverse(const std::vector<cv::Point2f>& NewCorners)
+{
+	if (CalibImgPoints.empty()) return true;
+
+	// Compute mean position of new corners
+	cv::Point2f NewMean(0.0f, 0.0f);
+	for (auto& P : NewCorners) NewMean += P;
+	NewMean.x /= NewCorners.size();
+	NewMean.y /= NewCorners.size();
+
+	// Compare against all existing captured frames
+	for (auto& Existing : CalibImgPoints)
+	{
+		cv::Point2f ExistMean(0.0f, 0.0f);
+		for (auto& P : Existing) ExistMean += P;
+		ExistMean.x /= Existing.size();
+		ExistMean.y /= Existing.size();
+
+		float Dx   = NewMean.x - ExistMean.x;
+		float Dy   = NewMean.y - ExistMean.y;
+		float Dist = FMath::Sqrt(Dx * Dx + Dy * Dy);
+
+		if (Dist < 40.0f) // pixels — too close to an existing frame
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool AOpenCVCameraActor::RunCalibration()
+{
+	UKismetSystemLibrary::PrintString(this, TEXT("Running calibration — please wait..."), true, true, FLinearColor::Yellow, 3.0f);
+
+	cv::Mat CameraMatrix, DistCoeffs;
+	std::vector<cv::Mat> RVecs, TVecs;
+
+	double RMS = cv::calibrateCamera(CalibObjPoints,CalibImgPoints,CalibImageSize,CameraMatrix,DistCoeffs,RVecs, TVecs);
+
+	RMSError = (float)RMS;
+
+	if (RMS > 3.0)
+	{
+		CalibrationState = ECalibrationState::Failed;
+		UKismetSystemLibrary::PrintString(this,FString::Printf(TEXT("Calibration FAILED — RMS too high: %.2f px. Recapture with better images."), RMS),true, true, FLinearColor::Red, 10.0f);
+		return false;
+	}
+
+	// Store results into UPROPERTY variables
+	FocalLengthX = (float)CameraMatrix.at<double>(0, 0);
+	FocalLengthY = (float)CameraMatrix.at<double>(1, 1);
+	PrincipalX   = (float)CameraMatrix.at<double>(0, 2);
+	PrincipalY   = (float)CameraMatrix.at<double>(1, 2);
+
+	if (DistCoeffs.total() >= 4)
+	{
+		DistK1 = (float)DistCoeffs.at<double>(0);
+		DistK2 = (float)DistCoeffs.at<double>(1);
+		DistP1 = (float)DistCoeffs.at<double>(2);
+		DistP2 = (float)DistCoeffs.at<double>(3);
+	}
+
+	CalibrationState  = ECalibrationState::Calibrated;
+	bCalibrationLoaded = true;
+
+	UKismetSystemLibrary::PrintString(this,
+		FString::Printf(TEXT("Calibration SUCCESS — RMS: %.4f px\nfx=%.2f fy=%.2f cx=%.2f cy=%.2f"),RMS, FocalLengthX, FocalLengthY, PrincipalX, PrincipalY),true, true, FLinearColor::Green, 10.0f);
+
+	SaveCalibration();
+	return true;
+}
+
+void AOpenCVCameraActor::SaveCalibration()
+{
+	FString SavePath = FPaths::ProjectSavedDir() / TEXT("CameraCalibration.json");
+
+	FString Json = FString::Printf(
+		TEXT("{\n")
+		TEXT("  \"rms\"  : %.6f,\n")
+		TEXT("  \"fx\"   : %.6f,\n")
+		TEXT("  \"fy\"   : %.6f,\n")
+		TEXT("  \"cx\"   : %.6f,\n")
+		TEXT("  \"cy\"   : %.6f,\n")
+		TEXT("  \"k1\"   : %.6f,\n")
+		TEXT("  \"k2\"   : %.6f,\n")
+		TEXT("  \"p1\"   : %.6f,\n")
+		TEXT("  \"p2\"   : %.6f\n")
+		TEXT("}"),
+		RMSError,
+		FocalLengthX, FocalLengthY,
+		PrincipalX, PrincipalY,
+		DistK1, DistK2, DistP1, DistP2);
+
+	if (FFileHelper::SaveStringToFile(Json, *SavePath))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("Calibration saved to: %s"), *SavePath);
+	}
 }
